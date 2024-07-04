@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/tarantool/go-tail/util"
 
-    "github.com/fsnotify/fsnotify"
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/tomb.v1"
 )
 
@@ -20,10 +21,12 @@ import (
 type InotifyFileWatcher struct {
 	Filename string
 	Size     int64
+	// inodeId record cur watch file id
+	inodeId uint64
 }
 
 func NewInotifyFileWatcher(filename string) *InotifyFileWatcher {
-	fw := &InotifyFileWatcher{filepath.Clean(filename), 0}
+	fw := &InotifyFileWatcher{filepath.Clean(filename), 0, 0}
 	return fw
 }
 
@@ -75,6 +78,12 @@ func (fw *InotifyFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 
 	changes := NewFileChanges()
 	fw.Size = pos
+	var stat syscall.Stat_t
+	// Record file inodeId.
+	err = syscall.Stat(fw.Filename, &stat)
+	if err == nil {
+		fw.inodeId = stat.Ino
+	}
 
 	go func() {
 
@@ -123,10 +132,21 @@ func (fw *InotifyFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 				}
 				fw.Size = fi.Size()
 
+				// No matter what, it is necessary to notify a write event.
+				changes.NotifyModified()
+
 				if prevSize > 0 && prevSize > fw.Size {
+					// File change; if file inodeId changed, notify delete event.
+					if fw.inodeId > 0 && fi.Sys() != nil {
+						if statT, fok := fi.Sys().(*syscall.Stat_t); fok {
+							if statT.Ino != fw.inodeId {
+								RemoveWatch(fw.Filename)
+								changes.NotifyDeleted()
+								return
+							}
+						}
+					}
 					changes.NotifyTruncated()
-				} else {
-					changes.NotifyModified()
 				}
 				prevSize = fw.Size
 			}

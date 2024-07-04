@@ -385,6 +385,13 @@ func (tail *Tail) waitForChanges() error {
 		}
 	}
 
+	// The write event should be handled first.
+	select {
+	case <-tail.changes.Modified:
+		return nil
+	default:
+	}
+
 	select {
 	case <-tail.changes.Modified:
 		return nil
