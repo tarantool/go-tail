@@ -11,8 +11,8 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	
-	"github.com/nxadm/tail"
+
+	"github.com/tarantool/go-tail"
 )
 
 type jsonStruct struct {
@@ -36,13 +36,13 @@ func main() {
 	go createJSON(file)
 	var js jsonStruct
 	for line := range t.Lines {
-		fmt.Printf("JSON: " + line.Text + "\n")
+		fmt.Println("JSON: " + line.Text)
 
 		err := json.Unmarshal([]byte(line.Text), &js)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("JSON counter field: " + js.Counter + "\n")
+		fmt.Println("JSON counter field: " + js.Counter)
 	}
 }
 

@@ -1,4 +1,6 @@
+// Copyright (c) 2026 FOSS contributors of https://github.com/tarantool/go-tail
 // Copyright (c) 2019 FOSS contributors of https://github.com/nxadm/tail
+//go:build windows
 // +build windows
 
 package tail
@@ -6,7 +8,7 @@ package tail
 import (
 	"os"
 
-	"github.com/nxadm/tail/winfile"
+	"github.com/tarantool/go-tail/winfile"
 )
 
 // Deprecated: this function is only useful internally and, as such,

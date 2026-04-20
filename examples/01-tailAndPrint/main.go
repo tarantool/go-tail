@@ -7,7 +7,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/nxadm/tail"
+	"github.com/tarantool/go-tail"
 )
 
 var logFile = "/var/log/syslog"
