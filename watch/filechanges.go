@@ -1,3 +1,4 @@
+// Copyright (c) 2026 FOSS contributors of https://github.com/tarantool/go-tail
 // Copyright (c) 2019 FOSS contributors of https://github.com/nxadm/tail
 package watch
 

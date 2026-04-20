@@ -1,3 +1,4 @@
+// Copyright (c) 2026 FOSS contributors of https://github.com/tarantool/go-tail
 // Copyright (c) 2019 FOSS contributors of https://github.com/nxadm/tail
 // Copyright (c) 2015 HPE Software Inc. All rights reserved.
 // Copyright (c) 2013 ActiveState Software Inc. All rights reserved.
@@ -7,9 +8,10 @@ package main
 import (
 	"flag"
 	"fmt"
-    "io"
+	"io"
 	"os"
-	"github.com/nxadm/tail"
+
+	"github.com/tarantool/go-tail"
 )
 
 func args2config() (tail.Config, int64) {

@@ -1,9 +1,8 @@
-[![Go Reference](https://pkg.go.dev/badge/github.com/nxadm/tail.svg)](https://pkg.go.dev/github.com/nxadm/tail#section-documentation)
-![ci](https://github.com/nxadm/tail/workflows/ci/badge.svg)
-[![FreeBSD](https://api.cirrus-ci.com/github/nxadm/tail.svg)](https://cirrus-ci.com/github/nxadm/tail)
+[![Go Reference](https://pkg.go.dev/badge/github.com/tarantool/go-tail.svg)](https://pkg.go.dev/github.com/tarantool/go-tail#section-documentation)
+![ci](https://github.com/tarantool/go-tail/workflows/ci/badge.svg)
 # tail functionality in Go
 
-nxadm/tail provides a Go library that emulates the features of the BSD `tail`
+tarantool/go-tail provides a Go library that emulates the features of the BSD `tail`
 program. The library comes with full support for truncation/move detection as
 it is designed to work with log rotation tools. The library works on all
 operating systems supported by Go, including POSIX systems like Linux, *BSD,
@@ -25,11 +24,11 @@ for line := range t.Lines {
 }
 ```
 
-See [API documentation](https://pkg.go.dev/github.com/nxadm/tail#section-documentation).
+See [API documentation](https://pkg.go.dev/github.com/tarantool/go-tail#section-documentation).
 
 ## Installing
 
-    go get github.com/nxadm/tail/...
+    go get github.com/tarantool/go-tail/...
 
 ## History
 

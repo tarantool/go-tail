@@ -1,3 +1,4 @@
+// Copyright (c) 2026 FOSS contributors of https://github.com/tarantool/go-tail
 // Copyright (c) 2019 FOSS contributors of https://github.com/nxadm/tail
 // Copyright (c) 2015 HPE Software Inc. All rights reserved.
 // Copyright (c) 2013 ActiveState Software Inc. All rights reserved.
@@ -17,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nxadm/tail/ratelimiter"
-	"github.com/nxadm/tail/watch"
+	"github.com/tarantool/go-tail/ratelimiter"
+	"github.com/tarantool/go-tail/watch"
 )
 
 func TestTailFile(t *testing.T) {
