@@ -104,6 +104,8 @@ type Tail struct {
 
 	watcher watch.FileWatcher
 	changes *watch.FileChanges
+	// pendingDelete delays a rename/delete until the open file reaches EOF.
+	pendingDelete bool
 
 	tomb.Tomb // provides: Done, Kill, Dying
 
@@ -371,9 +373,32 @@ func (tail *Tail) tailFileSync() {
 }
 
 // waitForChanges waits until the file has been appended, deleted,
-// moved or truncated. When moved or deleted - the file will be
-// reopened if ReOpen is true. Truncated files are always reopened.
+// moved or truncated. Truncated files are always reopened.
+//
+// A move or deletion is not acted upon right away: the event only sets
+// pendingDelete and returns, so the caller keeps reading the still-open
+// file until it hits EOF. The deletion is handled on the next call, which
+// reopens the file when ReOpen is true and returns ErrStop otherwise.
+// This costs one extra call but guarantees that writes made just before
+// the rename are not lost.
 func (tail *Tail) waitForChanges() error {
+	if tail.pendingDelete {
+		tail.pendingDelete = false
+		tail.changes = nil
+		if tail.ReOpen {
+			// XXX: we must not log from a library.
+			tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
+			if err := tail.reopen(); err != nil {
+				return err
+			}
+			tail.Logger.Printf("Successfully reopened %s", tail.Filename)
+			tail.openReader()
+			return nil
+		}
+		tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
+		return ErrStop
+	}
+
 	if tail.changes == nil {
 		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -396,19 +421,8 @@ func (tail *Tail) waitForChanges() error {
 	case <-tail.changes.Modified:
 		return nil
 	case <-tail.changes.Deleted:
-		tail.changes = nil
-		if tail.ReOpen {
-			// XXX: we must not log from a library.
-			tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
-			if err := tail.reopen(); err != nil {
-				return err
-			}
-			tail.Logger.Printf("Successfully reopened %s", tail.Filename)
-			tail.openReader()
-			return nil
-		}
-		tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
-		return ErrStop
+		tail.pendingDelete = true
+		return nil
 	case <-tail.changes.Truncated:
 		// Always reopen truncated files (Follow is true)
 		tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)

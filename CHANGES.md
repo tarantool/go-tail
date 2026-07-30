@@ -1,5 +1,6 @@
 # Unreleased
 * PR #1: possible line loss and duplication when file is renamed.
+* PR #2: drain the open file to EOF before handling a rename or deletion notification.
 
 # Version v1.4.11
 * Bump fsnotify to v1.6.0. Should fix some issues.
