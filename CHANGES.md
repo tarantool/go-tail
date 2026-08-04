@@ -1,4 +1,6 @@
 # Unreleased
+
+# Version v1.4.13
 * PR #1: possible line loss and duplication when file is renamed.
 * PR #2: drain the open file to EOF before handling a rename or deletion notification.
 
