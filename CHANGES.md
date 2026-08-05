@@ -1,5 +1,12 @@
 # Unreleased
 
+# Version v1.4.14
+* PR #4: re-check the file right after arming the inotify watch. The
+  watch is only added once the file has been read to EOF, so a write, a
+  truncation or a rotation landing in between produced no event and
+  never would: the tailer kept waiting with unread data in the file
+  until some later, unrelated write woke it up.
+
 # Version v1.4.13
 * PR #1: possible line loss and duplication when file is renamed.
 * PR #2: drain the open file to EOF before handling a rename or deletion notification.
