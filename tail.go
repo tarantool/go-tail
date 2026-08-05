@@ -106,6 +106,9 @@ type Tail struct {
 	changes *watch.FileChanges
 	// pendingDelete delays a rename/delete until the open file reaches EOF.
 	pendingDelete bool
+	// pendingReopen delays a switch to the file that took over the
+	// name while the watch was being armed.
+	pendingReopen bool
 
 	tomb.Tomb // provides: Done, Kill, Dying
 
@@ -118,6 +121,12 @@ var (
 	// DiscardingLogger can be used to disable logging output
 	DiscardingLogger = log.New(ioutil.Discard, "", 0)
 )
+
+// delayBeforeWatch stalls a tailer between reaching EOF and arming the
+// watch, so that tests can reproduce writes landing in that window. It
+// is the counterpart of the TAIL_TEST_SLEEP knob of coreutils and
+// stays zero outside of tests.
+var delayBeforeWatch time.Duration
 
 // TailFile begins tailing the file. And returns a pointer to a Tail struct
 // and an error. An output stream is made available via the Tail.Lines
@@ -399,14 +408,43 @@ func (tail *Tail) waitForChanges() error {
 		return ErrStop
 	}
 
+	if tail.pendingReopen {
+		tail.pendingReopen = false
+		// The watch is already on the file that occupies the name now, so
+		// only the descriptor has to catch up with it. Keep tail.changes.
+		tail.Logger.Printf("Re-opening replaced file %s ...", tail.Filename)
+		if err := tail.reopen(); err != nil {
+			return err
+		}
+		tail.Logger.Printf("Successfully reopened replaced %s", tail.Filename)
+		tail.openReader()
+		return nil
+	}
+
 	if tail.changes == nil {
 		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
 		}
+
+		// Widen the unwatched window on demand, the way coreutils
+		// does with its TAIL_TEST_SLEEP build knob, so that tests can
+		// hit a race that is only microseconds wide.
+		if delayBeforeWatch > 0 {
+			time.Sleep(delayBeforeWatch)
+		}
+
 		tail.changes, err = tail.watcher.ChangeEvents(&tail.Tomb, pos)
 		if err != nil {
 			return err
+		}
+
+		recheck, err := tail.recheckAfterWatch(pos)
+		if err != nil {
+			return err
+		}
+		if recheck {
+			return nil
 		}
 	}
 
@@ -435,6 +473,43 @@ func (tail *Tail) waitForChanges() error {
 	case <-tail.Dying():
 		return ErrStop
 	}
+}
+
+// recheckAfterWatch inspects the file once the watch is in place and reports
+// whether there is something to read right away.
+func (tail *Tail) recheckAfterWatch(pos int64) (bool, error) {
+	fi, err := tail.file.Stat()
+	if err != nil {
+		return false, err
+	}
+
+	if tail.ReOpen {
+		if fs, err := os.Stat(tail.Filename); err == nil && !os.SameFile(fi, fs) {
+			tail.pendingReopen = true
+		}
+	}
+
+	if !fi.Mode().IsRegular() {
+		return tail.pendingReopen, nil
+	}
+
+	switch {
+	case fi.Size() < pos:
+		tail.Logger.Printf("Re-reading truncated file %s ...", tail.Filename)
+		if err := tail.seekTo(SeekInfo{Offset: 0, Whence: io.SeekStart}); err != nil {
+			return false, err
+		}
+		tail.lineNum = 0
+		if tail.lineBuf != nil {
+			tail.lineBuf.Reset()
+		}
+		return true, nil
+
+	case fi.Size() > pos:
+		return true, nil
+	}
+
+	return tail.pendingReopen, nil
 }
 
 func (tail *Tail) openReader() {
