@@ -128,6 +128,11 @@ var (
 // stays zero outside of tests.
 var delayBeforeWatch time.Duration
 
+// delayBeforeRecheck stalls a tailer between arming the watch and the
+// recheck that follows, so that tests can reproduce a rotation landing
+// in that window. Like delayBeforeWatch, it stays zero outside of tests.
+var delayBeforeRecheck time.Duration
+
 // TailFile begins tailing the file. And returns a pointer to a Tail struct
 // and an error. An output stream is made available via the Tail.Lines
 // channel (e.g. to be looped and printed). To handle errors during tailing,
@@ -381,6 +386,18 @@ func (tail *Tail) tailFileSync() {
 	}
 }
 
+// dropWatch tears down the current watch subscription, if any, so that
+// the next waitForChanges arms a fresh one and rechecks the file. The
+// producer goroutine is stopped synchronously before the re-arm: an
+// abandoned live producer would keep consuming from the shared per-file
+// events channel, stealing events from the new subscription.
+func (tail *Tail) dropWatch() {
+	if tail.changes != nil {
+		tail.changes.Stop()
+		tail.changes = nil
+	}
+}
+
 // waitForChanges waits until the file has been appended, deleted,
 // moved or truncated. Truncated files are always reopened.
 //
@@ -393,7 +410,11 @@ func (tail *Tail) tailFileSync() {
 func (tail *Tail) waitForChanges() error {
 	if tail.pendingDelete {
 		tail.pendingDelete = false
-		tail.changes = nil
+		// The reopen below resolves a pending replacement as well; a
+		// stale pendingReopen left set would trigger a second reopen
+		// and re-deliver everything read since this one.
+		tail.pendingReopen = false
+		tail.dropWatch()
 		if tail.ReOpen {
 			// XXX: we must not log from a library.
 			tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
@@ -410,8 +431,14 @@ func (tail *Tail) waitForChanges() error {
 
 	if tail.pendingReopen {
 		tail.pendingReopen = false
-		// The watch is already on the file that occupies the name now, so
-		// only the descriptor has to catch up with it. Keep tail.changes.
+		// The watch cannot be trusted across the switch: it may sit on
+		// the replacing file with a stale size baseline, or the rename
+		// may have already killed the producer, leaving behind a
+		// latched Deleted notification that would trigger a bogus
+		// second reopen. Drop the subscription and re-arm it after the
+		// reopen; the recheck that follows the re-arm picks up
+		// anything that happened in between.
+		tail.dropWatch()
 		tail.Logger.Printf("Re-opening replaced file %s ...", tail.Filename)
 		if err := tail.reopen(); err != nil {
 			return err
@@ -439,6 +466,10 @@ func (tail *Tail) waitForChanges() error {
 			return err
 		}
 
+		if delayBeforeRecheck > 0 {
+			time.Sleep(delayBeforeRecheck)
+		}
+
 		recheck, err := tail.recheckAfterWatch(pos)
 		if err != nil {
 			return err
@@ -463,6 +494,9 @@ func (tail *Tail) waitForChanges() error {
 		return nil
 	case <-tail.changes.Truncated:
 		// Always reopen truncated files (Follow is true)
+		// The descriptor moves to whatever occupies the name now, so
+		// the watch has to be dropped and re-armed with it.
+		tail.dropWatch()
 		tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)
 		if err := tail.reopen(); err != nil {
 			return err
@@ -509,6 +543,9 @@ func (tail *Tail) recheckAfterWatch(pos int64) (bool, error) {
 		return true, nil
 	}
 
+	// pendingReopen reports "read now" on purpose: the extra read cycle
+	// drains what is left in the open descriptor before waitForChanges
+	// switches it to the file that took over the name.
 	return tail.pendingReopen, nil
 }
 

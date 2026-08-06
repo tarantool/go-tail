@@ -1,4 +1,14 @@
 # Unreleased
+* PR #6: fix stale watcher state across log rotation. A watch armed
+  while the file was being replaced took its size baseline from the old
+  file, so the first write to the new file looked like a truncation and
+  the spurious reopen duplicated already-delivered lines. A watch kept
+  across the pendingReopen/Truncated reopen paths could be dead with a
+  latched Deleted notification, causing a bogus second reopen (line
+  duplication) — reopen paths now drop and re-arm the watch. A watch
+  removed externally (Cleanup) made the watcher goroutine exit silently
+  and corrupted the shared refcount, hanging the tailer and every later
+  tail of the same name.
 
 # Version v1.4.14
 * PR #4: re-check the file right after arming the inotify watch. The
