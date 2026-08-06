@@ -77,15 +77,25 @@ func (fw *InotifyFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 	}
 
 	changes := NewFileChanges()
-	fw.Size = pos
+
+	// Seed the size baseline and the inode from the file that occupies
+	// the name right now, not from the caller's offset: after a rotation
+	// in the unwatched window the name already points at a different,
+	// usually smaller file, and a stale baseline would make the first
+	// write to it look like a truncation, causing a spurious reopen that
+	// re-delivers already-sent lines. Changes that land before the watch
+	// is armed are the caller's recheck's job to detect, not ours.
+	fw.Size = 0
+	fw.inodeId = 0
 	var stat syscall.Stat_t
-	// Record file inodeId.
-	err = syscall.Stat(fw.Filename, &stat)
-	if err == nil {
+	if err := syscall.Stat(fw.Filename, &stat); err == nil {
+		fw.Size = stat.Size
 		fw.inodeId = stat.Ino
 	}
 
+	changes.hasProducer = true
 	go func() {
+		defer close(changes.stopped)
 
 		events := Events(fw.Filename)
 
@@ -98,10 +108,19 @@ func (fw *InotifyFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 			select {
 			case evt, ok = <-events:
 				if !ok {
-					RemoveWatch(fw.Filename)
+					// The events channel is closed by an external
+					// RemoveWatch (e.g. Cleanup): the watch is gone
+					// already and removing it again would corrupt
+					// the shared refcount. Report the file as gone
+					// so the consumer re-arms instead of blocking
+					// forever on a subscription that cannot fire.
+					changes.NotifyDeleted()
 					return
 				}
 			case <-t.Dying():
+				RemoveWatch(fw.Filename)
+				return
+			case <-changes.stop:
 				RemoveWatch(fw.Filename)
 				return
 			}
@@ -148,7 +167,6 @@ func (fw *InotifyFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 					}
 					changes.NotifyTruncated()
 				}
-				prevSize = fw.Size
 			}
 		}
 	}()

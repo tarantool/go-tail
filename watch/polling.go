@@ -56,18 +56,23 @@ func (fw *PollingFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 	// XXX: use tomb.Tomb to cleanly manage these goroutines. replace
 	// the fatal (below) with tomb's Kill.
 
-	fw.Size = pos
+	// Seed the size baseline from the file itself, not from the caller's
+	// offset: see the same seeding in InotifyFileWatcher.ChangeEvents.
+	fw.Size = origFi.Size()
 
+	changes.hasProducer = true
 	go func() {
+		defer close(changes.stopped)
+
 		prevSize := fw.Size
 		for {
 			select {
+			case <-time.After(POLL_DURATION):
 			case <-t.Dying():
 				return
-			default:
+			case <-changes.stop:
+				return
 			}
-
-			time.Sleep(POLL_DURATION)
 			fi, err := os.Stat(fw.Filename)
 			if err != nil {
 				// Windows cannot delete a file if a handle is still open (tail keeps one open)
